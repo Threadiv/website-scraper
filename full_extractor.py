@@ -96,7 +96,9 @@ DEFAULT_HEADERS = {
 
 
 def normalize_url(url: str) -> str:
-    url = url.strip()
+    url = url.strip().strip("'\"")
+    while url.startswith("="):
+        url = url[1:].strip().strip("'\"")
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     return url
