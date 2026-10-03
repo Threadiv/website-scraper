@@ -127,13 +127,18 @@ def clean_emails(raw_emails: set[str]) -> list[str]:
         local_part = parts[0]
         domain = parts[-1]
 
+        # Strip common French glued call-to-actions before local part
+        local_part = re.sub(r'^(?:(?:écrivez|crivez)-nous|contactez-nous|nous-contacter|appelez-nous)', '', local_part, flags=re.IGNORECASE)
+        # Strip phone number digits glued before common email prefixes (e.g. 09contact -> contact)
+        local_part = re.sub(r'^\d{2,}(?=(?:contact|info|hello|bonjour|support|admin|commercial|direction|accueil|devis)\b)', '', local_part, flags=re.IGNORECASE)
+
         # Strip words accidentally glued after common TLDs (e.g. gmail.comdevelopped -> gmail.com)
         m = COMMON_TLDS_REGEX.match(domain)
         if m:
             domain = m.group(1)
-            lower = f"{local_part}@{domain}"
 
-        if domain in IGNORED_EMAIL_DOMAINS or "." not in domain:
+        lower = f"{local_part}@{domain}"
+        if domain in IGNORED_EMAIL_DOMAINS or "." not in domain or not local_part:
             continue
         valid.add(lower)
     return sorted(valid)
@@ -335,10 +340,23 @@ def extract_all_data(html: str, base_url: str, response_headers: dict) -> dict:
                     clean_link = full_href.split("?")[0].rstrip("/")
                     socials[platform].add(clean_link)
 
-    # Text regex for emails & phones
-    full_text = soup.get_text()
+    # Text regex for emails & phones (use space separator so text across tags is not glued)
+    full_text = soup.get_text(separator=" ")
     for match in EMAIL_REGEX.findall(full_text):
         emails.add(match)
+
+    # Also extract emails & phones from Schema.org JSON-LD
+    for entry in json_ld:
+        items_to_check = [entry] if isinstance(entry, dict) else []
+        if isinstance(entry, dict) and "@graph" in entry and isinstance(entry["@graph"], list):
+            items_to_check.extend([g for g in entry["@graph"] if isinstance(g, dict)])
+        for it in items_to_check:
+            if "email" in it and isinstance(it["email"], str):
+                clean_em = it["email"].replace("mailto:", "").strip()
+                if "@" in clean_em:
+                    emails.add(clean_em)
+            if "telephone" in it and isinstance(it["telephone"], str):
+                phones.add(it["telephone"].strip())
 
     # 4. Content Structure & Headings
     headings = {
