@@ -104,6 +104,8 @@ def normalize_url(url: str) -> str:
     return url
 
 
+COMMON_TLDS_REGEX = re.compile(r"^([a-z0-9-]+\.(?:com|fr|org|net|io|co|de|uk|eu|biz|info|site|online|store|tech|agency|app))[a-z]*$", re.IGNORECASE)
+
 def clean_emails(raw_emails: set[str]) -> list[str]:
     valid = set()
     for email in raw_emails:
@@ -113,7 +115,16 @@ def clean_emails(raw_emails: set[str]) -> list[str]:
         lower = email.lower()
         if any(lower.endswith(ext) for ext in IGNORED_EMAIL_EXTENSIONS):
             continue
-        domain = lower.split("@")[-1]
+        parts = lower.split("@")
+        local_part = parts[0]
+        domain = parts[-1]
+
+        # Strip words accidentally glued after common TLDs (e.g. gmail.comdevelopped -> gmail.com)
+        m = COMMON_TLDS_REGEX.match(domain)
+        if m:
+            domain = m.group(1)
+            lower = f"{local_part}@{domain}"
+
         if domain in IGNORED_EMAIL_DOMAINS or "." not in domain:
             continue
         valid.add(lower)
