@@ -1,0 +1,14 @@
+[Unit]
+Description=Lead Scraper FastAPI Service for n8n
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lead-scraper
+ExecStart=/usr/local/bin/uvicorn api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
