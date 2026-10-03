@@ -90,8 +90,16 @@ DEFAULT_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/130.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 
@@ -428,7 +436,7 @@ async def scrape_full_site(client: httpx.AsyncClient, url_str: str, semaphore: a
     async with semaphore:
         start_t = time.perf_counter()
         try:
-            resp = await client.get(url, follow_redirects=True)
+            resp = await client.get(url, headers=DEFAULT_HEADERS, follow_redirects=True)
             latency = int((time.perf_counter() - start_t) * 1000)
             record["latency_ms"] = latency
             record["final_url"] = str(resp.url)
@@ -438,6 +446,36 @@ async def scrape_full_site(client: httpx.AsyncClient, url_str: str, semaphore: a
 
             if resp.status_code == 200:
                 record["data"] = extract_all_data(resp.text, str(resp.url), resp.headers)
+
+                # If no email found on homepage, search candidate contact subpages
+                contacts = record["data"].get("contacts", {})
+                if not contacts.get("emails"):
+                    contact_keywords = [
+                        "contact", "about", "a-propos", "qui-sommes-nous",
+                        "mentions", "mentions-legales", "nous-contacter", "coordonnees"
+                    ]
+                    candidates = []
+                    for link in record["data"].get("links", {}).get("internal_links_sample", []):
+                        if any(kw in link.lower() for kw in contact_keywords):
+                            candidates.append(link)
+
+                    if candidates:
+                        contact_target = candidates[0]
+                        try:
+                            c_resp = await client.get(contact_target, headers=DEFAULT_HEADERS, follow_redirects=True, timeout=5.0)
+                            if c_resp.status_code == 200:
+                                c_data = extract_all_data(c_resp.text, str(c_resp.url), c_resp.headers)
+                                c_emails = c_data.get("contacts", {}).get("emails", [])
+                                if c_emails:
+                                    record["data"]["contacts"]["emails"] = sorted(set(contacts.get("emails", []) + c_emails))
+                                c_phones = c_data.get("contacts", {}).get("phones", [])
+                                if c_phones:
+                                    record["data"]["contacts"]["phones"] = sorted(set(contacts.get("phones", []) + c_phones))
+                                for plat, socs in c_data.get("social_media", {}).items():
+                                    existing = record["data"]["social_media"].setdefault(plat, [])
+                                    record["data"]["social_media"][plat] = sorted(set(existing + socs))
+                        except Exception:
+                            pass
             else:
                 record["error"] = f"HTTP Error {resp.status_code}"
         except httpx.TimeoutException:

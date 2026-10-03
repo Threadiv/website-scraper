@@ -34,7 +34,7 @@ import uvicorn
 import httpx
 
 # Import scraping logic from full_extractor
-from full_extractor import scrape_full_site, asyncio
+from full_extractor import scrape_full_site, asyncio, DEFAULT_HEADERS
 
 app = FastAPI(
     title="n8n Lead & Website Scraper Service",
@@ -75,6 +75,7 @@ async def scrape_endpoint(req: ScrapeRequest):
 
     limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
     async with httpx.AsyncClient(
+        headers=DEFAULT_HEADERS,
         timeout=req.timeout,
         verify=False,
         limits=limits,
